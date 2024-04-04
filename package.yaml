@@ -1,0 +1,29 @@
+name: tango-player
+version: 0.1.0.0
+license: AllRightsReserved
+author: Sean Parsons
+build-type: Simple
+
+ghc-options:
+  - -threaded
+  - -fno-warn-orphans
+
+dependencies:
+  - base
+  - aeson
+  - directory
+  - filepath
+  - gi-gtk
+  - hashable
+  - haskell-gi-base
+  - lens
+  - monoidal-containers
+  - text
+  - unordered-containers
+  - xdg-basedir-compliant
+
+executables:
+  tango-player:
+    main: Main.hs
+    source-dirs:
+      - src
