@@ -6,6 +6,8 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
 
 import Data.Hashable
 import Data.List
@@ -21,7 +23,11 @@ import System.XDG
 import qualified GI.Gtk as Gtk
 import Data.GI.Base
 import Data.IORef
-import Data.Text
+import Data.Text hiding (zip)
+import Control.Lens
+import qualified Control.Lens as L
+import Data.Generics.Product
+import Data.Generics.Sum
 
 data Book = Book
           { bookName :: Text
@@ -65,14 +71,24 @@ writeBooksToXDGDir books = do
   createDirectoryIfMissing True $ takeDirectory (configHome </> configFilePath)
   writeConfigFile configFilePath $ encode books
 
+updateBooksToPlay :: Text -> FilePath -> Bool -> [Book] -> [Book]
+updateBooksToPlay bookNameToTarget file play books =
+  L.set (traverse . filtered (\Book{..} -> bookName == bookNameToTarget) . field @"files" . at file) (Just play) books
+
+updateToPlay :: IORef [Book] -> Text -> FilePath -> Bool -> IO ()
+updateToPlay booksRef bookNameToTarget file toPlay = do 
+  modifyIORef booksRef $ updateBooksToPlay bookNameToTarget file toPlay
+  books <- readIORef booksRef
+  writeBooksToXDGDir books
+
 showWindow :: IORef [Book] -> IO ()
 showWindow booksRef = do 
   Gtk.init Nothing
   scrolledWindow <- new Gtk.ScrolledWindow []
   win <- new Gtk.Window [ #type := Gtk.WindowTypeToplevel
                         , #iconName := "applications-haskell"
-                        , #defaultWidth := 1024
-                        , #defaultHeight := 768
+                        , #defaultWidth := 300
+                        , #defaultHeight := 600
                         , #child := scrolledWindow
                         ]
   booksBox <- Gtk.boxNew Gtk.OrientationVertical 10
@@ -85,12 +101,28 @@ showWindow booksRef = do
                                , #marginEnd := 10
                                ]
     #add booksBox bookFrame
-    filesBox <- Gtk.boxNew Gtk.OrientationVertical 2
-    #add bookFrame filesBox
-    let fileKeys = sort $ SM.keys $ files book
-    forM_ fileKeys $ \file -> do
-      fileCheck <- new Gtk.CheckButton [ #label := pack file ]
-      #add filesBox fileCheck
+    filesGrid <- new Gtk.Grid [ #rowSpacing := 4
+                              , #columnSpacing := 3
+                              , #marginStart := 10
+                              , #marginEnd := 10
+                              , #marginLeft := 10
+                              , #marginRight := 10
+                              ]
+    #add bookFrame filesGrid
+    let fileEntries = sort $ SM.toList $ files book
+    let fileEntriesAndIndexes = zip fileEntries [0..]
+    forM_ fileEntriesAndIndexes $ \((file, checked), rowIndex) -> do
+      fileLabel <- new Gtk.Label [ #label := pack file
+                                 ]
+      #attach filesGrid fileLabel 0 rowIndex 1 1
+      fileCheck <- new Gtk.CheckButton [ #active := checked
+                                       , #marginTop := 2
+                                       , #marginLeft := 10
+                                       ]
+      #attach filesGrid fileCheck 1 rowIndex 1 1
+      on fileCheck #toggled $ do 
+        toPlay <- Gtk.get fileCheck #active
+        updateToPlay booksRef (bookName book) file toPlay
       
   -- Pressing play button starts playback and changes to a stop button.    
   -- If any entry is (un)ticked, save the listing of files to play to the disk.

@@ -16,6 +16,7 @@ dependencies:
   - gi-gtk
   - hashable
   - haskell-gi-base
+  - generic-lens
   - lens
   - monoidal-containers
   - text
