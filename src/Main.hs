@@ -28,6 +28,10 @@ import Control.Lens
 import qualified Control.Lens as L
 import Data.Generics.Product
 import Data.Generics.Sum
+import System.Process
+import Control.Concurrent
+
+type ProcessValues = (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle) 
 
 data Book = Book
           { bookName :: Text
@@ -46,9 +50,15 @@ configFilePath = "tango-player/books.json"
 baseBookDirectory :: FilePath
 baseBookDirectory = "/home/sean/Books/Japan/JLPT Tango/"
 
+sectionDirPart :: FilePath
+sectionDirPart = "Section With Pause"
+
+mpvOptions :: [String]
+mpvOptions = ["--no-video"]
+
 getBook :: FilePath -> Text -> IO Book
 getBook bookDir bookName = do 
-  filesForBook <- listDirectory (bookDir </> "Section With Pause")
+  filesForBook <- listDirectory (bookDir </> sectionDirPart)
   let files = SM.fromList $ fmap (\file -> (file, False)) filesForBook
   pure Book{..}
 
@@ -81,18 +91,56 @@ updateToPlay booksRef bookNameToTarget file toPlay = do
   books <- readIORef booksRef
   writeBooksToXDGDir books
 
-showWindow :: IORef [Book] -> IO ()
-showWindow booksRef = do 
-  Gtk.init Nothing
-  scrolledWindow <- new Gtk.ScrolledWindow []
-  win <- new Gtk.Window [ #type := Gtk.WindowTypeToplevel
-                        , #iconName := "applications-haskell"
-                        , #defaultWidth := 300
-                        , #defaultHeight := 600
-                        , #child := scrolledWindow
-                        ]
-  booksBox <- Gtk.boxNew Gtk.OrientationVertical 10
-  #add scrolledWindow booksBox
+filesToPlay :: IORef [Book] -> IO [FilePath]
+filesToPlay booksRef = do 
+  books <- readIORef booksRef
+  pure $ sort $ do 
+    book <- books 
+    let nameOfBook = bookName book
+    fileToPlay <- SM.keys $ SM.filter id $ files book
+    pure (baseBookDirectory </> unpack nameOfBook </> sectionDirPart </> fileToPlay)
+
+stopPlaying :: IORef (Maybe ProcessValues) -> IO ()
+stopPlaying playingProcessValuesRef = do 
+  maybeProcessValues <- readIORef playingProcessValuesRef
+  case maybeProcessValues of 
+    Nothing -> pure ()
+    Just (_, _, _, processHandle) -> terminateProcess processHandle
+  writeIORef playingProcessValuesRef Nothing
+
+startPlaying :: IORef [Book] -> IORef (Maybe ProcessValues) -> IO ()
+startPlaying booksRef playingProcessValuesRef = do 
+  stopPlaying playingProcessValuesRef
+  files <- filesToPlay booksRef
+  print ("mpv", (mpvOptions <> files))
+  let processDescriptor = proc "mpv" (mpvOptions <> files)
+  processValues <- createProcess processDescriptor
+  writeIORef playingProcessValuesRef (Just processValues)
+
+createPlayBar :: IORef [Book] -> IORef (Maybe ProcessValues) -> IO Gtk.ActionBar
+createPlayBar booksRef playingProcessValuesRef = do 
+  playBar <- new Gtk.ActionBar []
+  stopButton <- new Gtk.Button [ #label := "Stop"
+                               ]
+  #packStart playBar stopButton
+  on stopButton #clicked $ do 
+    stopPlaying playingProcessValuesRef
+      
+  playButton <- new Gtk.Button [ #label := "Play"
+                               ]
+  #packStart playBar playButton
+  on playButton #clicked $ do 
+    startPlaying booksRef playingProcessValuesRef
+
+  pure playBar
+
+createListing :: IORef [Book] -> IO Gtk.ScrolledWindow
+createListing booksRef = do 
+  scrolledListing <- new Gtk.ScrolledWindow []
+  booksBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
+                          , #spacing := 10
+                          ]
+  #add scrolledListing booksBox
   -- Display listing of files with checkboxes against them.  
   startingBooks <- readIORef booksRef
   forM_ startingBooks $ \book -> do
@@ -120,15 +168,34 @@ showWindow booksRef = do
                                        , #marginLeft := 10
                                        ]
       #attach filesGrid fileCheck 1 rowIndex 1 1
+      -- If any entry is (un)ticked, save the listing of files to play to the disk.
       on fileCheck #toggled $ do 
         toPlay <- Gtk.get fileCheck #active
         updateToPlay booksRef (bookName book) file toPlay
-      
-  -- Pressing play button starts playback and changes to a stop button.    
-  -- If any entry is (un)ticked, save the listing of files to play to the disk.
-  -- Pressing play button starts playback and changes to a stop button.
+  pure scrolledListing
 
-  on win #destroy Gtk.mainQuit
+showWindow :: IORef [Book] -> IORef (Maybe ProcessValues) -> IO ()
+showWindow booksRef playingProcessValuesRef = do 
+  Gtk.init Nothing
+  win <- new Gtk.Window [ #type := Gtk.WindowTypeToplevel
+                        , #iconName := "applications-haskell"
+                        , #defaultWidth := 260
+                        , #defaultHeight := 600
+                        ]
+  mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
+                         , #spacing := 10
+                         ]
+  #add win mainBox
+  
+  bookListingBox <- createListing booksRef
+  #packStart mainBox bookListingBox True True 0
+  
+  playBar <- createPlayBar booksRef playingProcessValuesRef
+  #packEnd mainBox playBar False False 0
+      
+  on win #destroy $ do
+    stopPlaying playingProcessValuesRef
+    Gtk.mainQuit
   #setTitle win "Tango Player"
 
   #showAll win
@@ -139,11 +206,10 @@ showWindow booksRef = do
 
 main :: IO ()
 main = do 
+  playingProcessValuesRef <- newIORef Nothing
   -- Load the previous listing of what files to play.
   possibleFromXDG <- getBooksFromXDGDir
   -- Scan the Anki Tango folders for each book and grab the section based mp3 files.
   books <- maybe getBooksFromTangoDir pure possibleFromXDG
   booksRef <- newIORef books
-  showWindow booksRef
-
-  -- writeBooksToXDGDir books
+  showWindow booksRef playingProcessValuesRef

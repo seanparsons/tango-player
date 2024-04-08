@@ -22,6 +22,7 @@ dependencies:
   - text
   - unordered-containers
   - xdg-basedir-compliant
+  - process
 
 executables:
   tango-player:
