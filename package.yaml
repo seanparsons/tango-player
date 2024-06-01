@@ -10,6 +10,7 @@ ghc-options:
 
 dependencies:
   - base
+  - bytestring
   - aeson
   - directory
   - filepath
@@ -21,7 +22,6 @@ dependencies:
   - monoidal-containers
   - text
   - unordered-containers
-  - xdg-basedir-compliant
   - process
 
 executables:

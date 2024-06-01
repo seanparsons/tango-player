@@ -19,7 +19,6 @@ import System.FilePath
 import System.IO
 import Data.Aeson
 import GHC.Generics
-import System.XDG
 import qualified GI.Gtk as Gtk
 import Data.GI.Base
 import Data.IORef
@@ -30,6 +29,23 @@ import Data.Generics.Product
 import Data.Generics.Sum
 import System.Process
 import Control.Concurrent
+import qualified Data.ByteString.Lazy as BL
+import System.Environment
+
+readConfigFile :: FilePath -> IO (Maybe BL.ByteString)
+readConfigFile filename = do 
+  configHome <- getConfigHome
+  let toLoad = configHome </> filename
+  exists <- doesFileExist toLoad
+  if exists
+    then fmap Just $ BL.readFile toLoad 
+    else pure Nothing
+
+getConfigHome :: IO FilePath
+getConfigHome = do 
+  xdgConfigHome <- lookupEnv "XDG_CONFIG_HOME"
+  home <- getHomeDirectory
+  pure $ maybe (home </> ".config") id xdgConfigHome
 
 type ProcessValues = (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle) 
 
@@ -78,8 +94,9 @@ getBooksFromXDGDir = do
 writeBooksToXDGDir :: [Book] -> IO ()
 writeBooksToXDGDir books = do
   configHome <- getConfigHome
-  createDirectoryIfMissing True $ takeDirectory (configHome </> configFilePath)
-  writeConfigFile configFilePath $ encode books
+  let fullConfigFilePath = configHome </> configFilePath
+  createDirectoryIfMissing True $ takeDirectory fullConfigFilePath
+  BL.writeFile fullConfigFilePath $ encode books
 
 updateBooksToPlay :: Text -> FilePath -> Bool -> [Book] -> [Book]
 updateBooksToPlay bookNameToTarget file play books =
