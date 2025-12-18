@@ -20,6 +20,8 @@ import System.IO
 import Data.Aeson
 import GHC.Generics
 import qualified GI.Gtk as Gtk
+import qualified GI.Gtk.Functions as GtkFunctions
+import qualified GI.Gtk.Enums as GtkEnums
 import Data.GI.Base
 import Data.IORef
 import Data.Text hiding (zip)
@@ -33,21 +35,21 @@ import qualified Data.ByteString.Lazy as BL
 import System.Environment
 
 readConfigFile :: FilePath -> IO (Maybe BL.ByteString)
-readConfigFile filename = do 
+readConfigFile filename = do
   configHome <- getConfigHome
   let toLoad = configHome </> filename
   exists <- doesFileExist toLoad
   if exists
-    then fmap Just $ BL.readFile toLoad 
+    then fmap Just $ BL.readFile toLoad
     else pure Nothing
 
 getConfigHome :: IO FilePath
-getConfigHome = do 
+getConfigHome = do
   xdgConfigHome <- lookupEnv "XDG_CONFIG_HOME"
   home <- getHomeDirectory
   pure $ maybe (home </> ".config") id xdgConfigHome
 
-type ProcessValues = (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle) 
+type ProcessValues = (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 
 data Book = Book
           { bookName :: Text
@@ -73,21 +75,21 @@ mpvOptions :: [String]
 mpvOptions = ["--no-video"]
 
 getBook :: FilePath -> Text -> IO Book
-getBook bookDir bookName = do 
+getBook bookDir bookName = do
   filesForBook <- listDirectory (bookDir </> sectionDirPart)
   let files = SM.fromList $ fmap (\file -> (file, False)) filesForBook
   pure Book{..}
 
 getBooksFromTangoDir :: IO [Book]
-getBooksFromTangoDir = do 
+getBooksFromTangoDir = do
   bookDirs <- listDirectory baseBookDirectory
   unsortedBooks <- traverse (\bookDir -> getBook (baseBookDirectory </> bookDir) (pack bookDir)) bookDirs
   pure $ sortOn bookName unsortedBooks
 
 getBooksFromXDGDir :: IO (Maybe [Book])
-getBooksFromXDGDir = do 
-  fromConfigFile <- readConfigFile configFilePath 
-  pure $ do 
+getBooksFromXDGDir = do
+  fromConfigFile <- readConfigFile configFilePath
+  pure $ do
     configFileBytes <- fromConfigFile
     decode configFileBytes
 
@@ -103,30 +105,30 @@ updateBooksToPlay bookNameToTarget file play books =
   L.set (traverse . filtered (\Book{..} -> bookName == bookNameToTarget) . field @"files" . at file) (Just play) books
 
 updateToPlay :: IORef [Book] -> Text -> FilePath -> Bool -> IO ()
-updateToPlay booksRef bookNameToTarget file toPlay = do 
+updateToPlay booksRef bookNameToTarget file toPlay = do
   modifyIORef booksRef $ updateBooksToPlay bookNameToTarget file toPlay
   books <- readIORef booksRef
   writeBooksToXDGDir books
 
 filesToPlay :: IORef [Book] -> IO [FilePath]
-filesToPlay booksRef = do 
+filesToPlay booksRef = do
   books <- readIORef booksRef
-  pure $ sort $ do 
-    book <- books 
+  pure $ sort $ do
+    book <- books
     let nameOfBook = bookName book
     fileToPlay <- SM.keys $ SM.filter id $ files book
     pure (baseBookDirectory </> unpack nameOfBook </> sectionDirPart </> fileToPlay)
 
 stopPlaying :: IORef (Maybe ProcessValues) -> IO ()
-stopPlaying playingProcessValuesRef = do 
+stopPlaying playingProcessValuesRef = do
   maybeProcessValues <- readIORef playingProcessValuesRef
-  case maybeProcessValues of 
+  case maybeProcessValues of
     Nothing -> pure ()
     Just (_, _, _, processHandle) -> terminateProcess processHandle
   writeIORef playingProcessValuesRef Nothing
 
 startPlaying :: IORef [Book] -> IORef (Maybe ProcessValues) -> IO ()
-startPlaying booksRef playingProcessValuesRef = do 
+startPlaying booksRef playingProcessValuesRef = do
   stopPlaying playingProcessValuesRef
   files <- filesToPlay booksRef
   print ("mpv", (mpvOptions <> files))
@@ -135,30 +137,30 @@ startPlaying booksRef playingProcessValuesRef = do
   writeIORef playingProcessValuesRef (Just processValues)
 
 createPlayBar :: IORef [Book] -> IORef (Maybe ProcessValues) -> IO Gtk.ActionBar
-createPlayBar booksRef playingProcessValuesRef = do 
+createPlayBar booksRef playingProcessValuesRef = do
   playBar <- new Gtk.ActionBar []
   stopButton <- new Gtk.Button [ #label := "Stop"
                                ]
   #packStart playBar stopButton
-  on stopButton #clicked $ do 
+  on stopButton #clicked $ do
     stopPlaying playingProcessValuesRef
-      
+
   playButton <- new Gtk.Button [ #label := "Play"
                                ]
   #packStart playBar playButton
-  on playButton #clicked $ do 
+  on playButton #clicked $ do
     startPlaying booksRef playingProcessValuesRef
 
   pure playBar
 
 createListing :: IORef [Book] -> IO Gtk.ScrolledWindow
-createListing booksRef = do 
+createListing booksRef = do
   scrolledListing <- new Gtk.ScrolledWindow []
   booksBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                           , #spacing := 10
                           ]
   #add scrolledListing booksBox
-  -- Display listing of files with checkboxes against them.  
+  -- Display listing of files with checkboxes against them.
   startingBooks <- readIORef booksRef
   forM_ startingBooks $ \book -> do
     bookFrame <- new Gtk.Frame [ #label := bookName book
@@ -186,15 +188,15 @@ createListing booksRef = do
                                        ]
       #attach filesGrid fileCheck 1 rowIndex 1 1
       -- If any entry is (un)ticked, save the listing of files to play to the disk.
-      on fileCheck #toggled $ do 
+      on fileCheck #toggled $ do
         toPlay <- Gtk.get fileCheck #active
         updateToPlay booksRef (bookName book) file toPlay
   pure scrolledListing
 
 showWindow :: IORef [Book] -> IORef (Maybe ProcessValues) -> IO ()
-showWindow booksRef playingProcessValuesRef = do 
-  Gtk.init Nothing
-  win <- new Gtk.Window [ #type := Gtk.WindowTypeToplevel
+showWindow booksRef playingProcessValuesRef = do
+  GtkFunctions.init Nothing
+  win <- new Gtk.Window [ #type := GtkEnums.WindowTypeToplevel
                         , #iconName := "applications-haskell"
                         , #defaultWidth := 260
                         , #defaultHeight := 600
@@ -203,26 +205,26 @@ showWindow booksRef playingProcessValuesRef = do
                          , #spacing := 10
                          ]
   #add win mainBox
-  
+
   bookListingBox <- createListing booksRef
   #packStart mainBox bookListingBox True True 0
-  
+
   playBar <- createPlayBar booksRef playingProcessValuesRef
   #packEnd mainBox playBar False False 0
-      
+
   on win #destroy $ do
     stopPlaying playingProcessValuesRef
-    Gtk.mainQuit
+    GtkFunctions.mainQuit
   #setTitle win "Tango Player"
 
   #showAll win
 
   -- All Gtk+ applications must run the main event loop. Control ends here and
   -- waits for an event to occur (like a key press or mouse event).
-  Gtk.main
+  GtkFunctions.main
 
 main :: IO ()
-main = do 
+main = do
   playingProcessValuesRef <- newIORef Nothing
   -- Load the previous listing of what files to play.
   possibleFromXDG <- getBooksFromXDGDir
