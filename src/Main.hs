@@ -21,7 +21,7 @@ import Data.Aeson
 import GHC.Generics
 import qualified GI.Gtk as Gtk
 import qualified GI.Gtk.Functions as GtkFunctions
-import qualified GI.Gtk.Enums as GtkEnums
+import qualified GI.GLib as GLib
 import Data.GI.Base
 import Data.IORef
 import Data.Text hiding (zip)
@@ -196,8 +196,8 @@ createListing booksRef = do
 showWindow :: IORef [Book] -> IORef (Maybe ProcessValues) -> IO ()
 showWindow booksRef playingProcessValuesRef = do
   GtkFunctions.init Nothing
-  win <- new Gtk.Window [ #type := GtkEnums.WindowTypeToplevel
-                        , #iconName := "applications-haskell"
+  mainLoop <- GLib.mainLoopNew Nothing False
+  win <- new Gtk.Window [ #iconName := "applications-haskell"
                         , #defaultWidth := 260
                         , #defaultHeight := 600
                         ]
@@ -214,14 +214,14 @@ showWindow booksRef playingProcessValuesRef = do
 
   on win #destroy $ do
     stopPlaying playingProcessValuesRef
-    GtkFunctions.mainQuit
+    GLib.mainLoopQuit mainLoop
   #setTitle win "Tango Player"
 
   #showAll win
 
   -- All Gtk+ applications must run the main event loop. Control ends here and
   -- waits for an event to occur (like a key press or mouse event).
-  GtkFunctions.main
+  GLib.mainLoopRun mainLoop
 
 main :: IO ()
 main = do
