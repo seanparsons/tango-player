@@ -159,7 +159,7 @@ createListing booksRef = do
   booksBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                           , #spacing := 10
                           ]
-  #add scrolledListing booksBox
+  #setChild scrolledListing (Just booksBox)
   -- Display listing of files with checkboxes against them.
   startingBooks <- readIORef booksRef
   forM_ startingBooks $ \book -> do
@@ -167,15 +167,13 @@ createListing booksRef = do
                                , #marginStart := 10
                                , #marginEnd := 10
                                ]
-    #add booksBox bookFrame
+    #append booksBox bookFrame
     filesGrid <- new Gtk.Grid [ #rowSpacing := 4
                               , #columnSpacing := 3
                               , #marginStart := 10
                               , #marginEnd := 10
-                              , #marginLeft := 10
-                              , #marginRight := 10
                               ]
-    #add bookFrame filesGrid
+    #setChild bookFrame (Just filesGrid)
     let fileEntries = sort $ SM.toList $ files book
     let fileEntriesAndIndexes = zip fileEntries [0..]
     forM_ fileEntriesAndIndexes $ \((file, checked), rowIndex) -> do
@@ -184,7 +182,7 @@ createListing booksRef = do
       #attach filesGrid fileLabel 0 rowIndex 1 1
       fileCheck <- new Gtk.CheckButton [ #active := checked
                                        , #marginTop := 2
-                                       , #marginLeft := 10
+                                       , #marginStart := 10
                                        ]
       #attach filesGrid fileCheck 1 rowIndex 1 1
       -- If any entry is (un)ticked, save the listing of files to play to the disk.
@@ -195,7 +193,7 @@ createListing booksRef = do
 
 showWindow :: IORef [Book] -> IORef (Maybe ProcessValues) -> IO ()
 showWindow booksRef playingProcessValuesRef = do
-  GtkFunctions.init Nothing
+  GtkFunctions.init
   mainLoop <- GLib.mainLoopNew Nothing False
   win <- new Gtk.Window [ #iconName := "applications-haskell"
                         , #defaultWidth := 260
@@ -204,20 +202,22 @@ showWindow booksRef playingProcessValuesRef = do
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                          , #spacing := 10
                          ]
-  #add win mainBox
+  #setChild win (Just mainBox)
 
   bookListingBox <- createListing booksRef
-  #packStart mainBox bookListingBox True True 0
+  #setVexpand bookListingBox True
+  #append mainBox bookListingBox
 
   playBar <- createPlayBar booksRef playingProcessValuesRef
-  #packEnd mainBox playBar False False 0
+  #append mainBox playBar
 
-  on win #destroy $ do
+  on win #closeRequest $ do
     stopPlaying playingProcessValuesRef
     GLib.mainLoopQuit mainLoop
-  #setTitle win "Tango Player"
+    pure False
+  #setTitle win (Just "Tango Player")
 
-  #showAll win
+  #setVisible win True
 
   -- All Gtk+ applications must run the main event loop. Control ends here and
   -- waits for an event to occur (like a key press or mouse event).
