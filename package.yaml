@@ -16,6 +16,7 @@ dependencies:
   - filepath
   - gi-glib
   - gi-gtk
+  - gi-pango
   - hashable
   - haskell-gi-base
   - generic-lens

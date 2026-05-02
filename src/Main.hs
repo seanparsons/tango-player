@@ -22,6 +22,7 @@ import GHC.Generics
 import qualified GI.Gtk as Gtk
 import qualified GI.Gtk.Functions as GtkFunctions
 import qualified GI.GLib as GLib
+import qualified GI.Pango as Pango
 import Data.GI.Base
 import Data.IORef
 import Data.Text hiding (zip)
@@ -147,7 +148,7 @@ createPlayBar booksRef playingProcessValuesRef = do
 
   playButton <- new Gtk.Button [ #label := "Play"
                                ]
-  #packStart playBar playButton
+  #packEnd playBar playButton
   on playButton #clicked $ do
     startPlaying booksRef playingProcessValuesRef
 
@@ -155,34 +156,42 @@ createPlayBar booksRef playingProcessValuesRef = do
 
 createListing :: IORef [Book] -> IO Gtk.ScrolledWindow
 createListing booksRef = do
-  scrolledListing <- new Gtk.ScrolledWindow []
+  scrolledListing <- new Gtk.ScrolledWindow [ #overlayScrolling := False
+                                            , #vscrollbarPolicy := Gtk.PolicyTypeAlways
+                                            , #hscrollbarPolicy := Gtk.PolicyTypeNever
+                                            ]
   booksBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
-                          , #spacing := 10
+                          , #spacing := 14
                           ]
   #setChild scrolledListing (Just booksBox)
   -- Display listing of files with checkboxes against them.
   startingBooks <- readIORef booksRef
   forM_ startingBooks $ \book -> do
     bookFrame <- new Gtk.Frame [ #label := bookName book
-                               , #marginStart := 10
-                               , #marginEnd := 10
                                ]
     #append booksBox bookFrame
-    filesGrid <- new Gtk.Grid [ #rowSpacing := 4
-                              , #columnSpacing := 3
-                              , #marginStart := 10
-                              , #marginEnd := 10
+    filesGrid <- new Gtk.Grid [ #rowSpacing := 6
+                              , #columnSpacing := 12
+                              , #marginStart := 12
+                              , #marginEnd := 12
+                              , #marginTop := 8
+                              , #marginBottom := 10
                               ]
     #setChild bookFrame (Just filesGrid)
     let fileEntries = sort $ SM.toList $ files book
     let fileEntriesAndIndexes = zip fileEntries [0..]
     forM_ fileEntriesAndIndexes $ \((file, checked), rowIndex) -> do
       fileLabel <- new Gtk.Label [ #label := pack file
+                                 , #hexpand := True
+                                 , #halign := Gtk.AlignFill
+                                 , #xalign := 0
+                                 , #ellipsize := Pango.EllipsizeModeMiddle
                                  ]
       #attach filesGrid fileLabel 0 rowIndex 1 1
       fileCheck <- new Gtk.CheckButton [ #active := checked
-                                       , #marginTop := 2
-                                       , #marginStart := 10
+                                       , #hexpand := False
+                                       , #halign := Gtk.AlignStart
+                                       , #valign := Gtk.AlignCenter
                                        ]
       #attach filesGrid fileCheck 1 rowIndex 1 1
       -- If any entry is (un)ticked, save the listing of files to play to the disk.
@@ -196,11 +205,15 @@ showWindow booksRef playingProcessValuesRef = do
   GtkFunctions.init
   mainLoop <- GLib.mainLoopNew Nothing False
   win <- new Gtk.Window [ #iconName := "applications-haskell"
-                        , #defaultWidth := 260
-                        , #defaultHeight := 600
+                        , #defaultWidth := 560
+                        , #defaultHeight := 640
                         ]
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
-                         , #spacing := 10
+                         , #spacing := 12
+                         , #marginStart := 10
+                         , #marginEnd := 10
+                         , #marginTop := 10
+                         , #marginBottom := 10
                          ]
   #setChild win (Just mainBox)
 
